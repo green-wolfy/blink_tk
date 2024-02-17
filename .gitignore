@@ -1,0 +1,22 @@
+# VIM temporary files
+*.swp
+
+# Visual Studio cache/config directory
+.vs/
+
+# Visual Studio Code cache/config directory
+.vscode/
+
+# PyCharm cache/config directory
+.idea/
+
+# Other
+dist
+*.egg-info/
+*.so
+__pycache__
+
+*.bak
+*.json
+*.jpg
+*.mp4
