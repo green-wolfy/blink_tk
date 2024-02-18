@@ -20,7 +20,21 @@ async def start():
         if blink: await blink.save(cred_file)
     return blink
 
-blink = asyncio.run(start())
-for name, camera in blink.cameras.items():
-  print(name)                   # Name of the camera
-  print(camera.attributes)      # Print available attributes of camera
+async def pull(blink, camera):
+    await blink.refresh(force=True)  # force a cache update USE WITH CAUTION
+    data_jpg = camera.image_from_cache  # bytes-like image object (jpg)
+    data_vid = camera.video_from_cache  # bytes-like video object (mp4)
+    if data_jpg: print("Cached %d bytes as jpg" % len(data_jpg))
+    else: print("No jpg data")
+    if data_vid: print("Cached %d bytes as video" % len(data_vid))
+    else: print("No video data")
+
+async def main():
+    blink = await start()
+    for name, camera in blink.cameras.items():
+        #print(name)                   # Name of the camera
+        #print(camera.attributes)      # Print available attributes of camera
+        #camera = blink.cameras['SOME CAMERA NAME']
+        await pull(blink, camera)
+
+asyncio.run(main())
