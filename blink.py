@@ -11,6 +11,8 @@ from tkinter import *
 from tkinter import messagebox
 import threading
 import queue
+from PIL import Image, ImageTk
+import io
 
 cred_file = "./cred.json"
 #blink_session = None
@@ -46,13 +48,13 @@ async def shot(blink, camera):
     print("Snapshot taken")
 
 async def pull(blink, camera, render=None):
-    print("Pulling data")
+    #print("Pulling data")
     await camera.async_arm(True)  # Arm a sync. Same as: await blink.sync[camera.name].async_arm(True)
     await blink.refresh(force=True)  # force a cache update USE WITH CAUTION
     data_jpg = camera.image_from_cache  # bytes-like image object (jpg)
     data_vid = camera.video_from_cache  # bytes-like video object (mp4)
     if data_jpg:
-        await camera.image_to_file('./image.jpg') # for debugging
+        #await camera.image_to_file('./image.jpg') # for debugging
         if render!=None: render(data_jpg)
         else: print("Cached %d bytes as jpg" % len(data_jpg))
     else: print("No jpg data")
@@ -62,7 +64,7 @@ async def pull(blink, camera, render=None):
     #await camera.video_to_file('./video.mp4')
     #sync = blink.sync[camera.name]
     #print(f"{sync.name} status: {sync.arm}")
-    print("Data pulled")
+    #print("Data pulled")
 
     #https://rest-u056.immedia-semi.com/api/v3/media/accounts/222219/networks/239481/owl/290887/thumbnail/thumbnail.jpg?ts=1669122404&ext=
     #{base_url}/api/v3/accounts/{account_id}/networks/{network_id}/sync_modules/{sync_id}/local_storage/manifest/{manifest_id}/clip/request/
@@ -95,19 +97,19 @@ class blink_viewer:
         master.bind('<Destroy>', self.stop_worker)
 
     def view_image(self, data):
-        print("Viewing image")
-        '''#img = PhotoImage(data=data)
-        img = Image.open('./image.jpg')
-        # Convert the image to a format Tkinter can use
-        photo = IMAGETEXT.PhotoImage(img)
+        #print("Viewing image")
+        # tk PhotoImage doesn't support Jpeg
+        pil_img = Image.open(io.BytesIO(data))
+        #pil_img = Image.open('./image.jpg')
+        img = ImageTk.PhotoImage(pil_img)
         self.canvas.create_image(0, 0, image=img, anchor=NW)
-        self.canvas.image = img'''
+        self.canvas.image = img
 
     def stop_worker(self, event=None):
         print("Stopping worker")
         self.queue.put_nowait('exit')
         #wait for the worker to finish
-        if self.worker:
+        if self.worker!=None:
             self.worker.join()
             self.worker = None # avoid calling join again. However, still see this got called about 4 times. Why?
             self.async_loop.stop()  # the async might get stuck, so force stop it
@@ -119,14 +121,11 @@ class blink_viewer:
         while True:
             # wait for a message from the tk thread
             message = self.queue.get()
-            print("Received message: %s" % message)
-            if message == 'snapshot':
-                await self.async_snapshot('shot')
-            elif message == 'view':
-                await self.async_snapshot('view')
-            elif message == 'exit':
-                break
-            print("Message processed")
+            #print("Received message: %s" % message)
+            if message == 'snapshot': await self.async_snapshot('shot')
+            elif message == 'view':   await self.async_snapshot('view')
+            elif message == 'exit':   break
+            #print("Message processed")
 
     async def async_snapshot(self, action='view'):
         for name, camera in self.blink.cameras.items():
@@ -144,18 +143,14 @@ class blink_viewer:
             async_loop.close()
 
     def snapshot(self):
-        print("Sending snapshot message")
-        if self.blink:
-            self.queue.put_nowait('snapshot')
-        else:
-            messagebox.showinfo("Error", "Blink not connected")
+        #print("Sending snapshot message")
+        if self.blink: self.queue.put_nowait('snapshot')
+        else: messagebox.showinfo("Error", "Blink not connected")
 
     def view(self):
-        if self.blink:
-            print("Sending view message")
-            self.queue.put_nowait('view')
-        else:
-            messagebox.showinfo("Error", "Blink not connected")
+        #print("Sending view message")
+        if self.blink: self.queue.put_nowait('view')
+        else: messagebox.showinfo("Error", "Blink not connected")
 
 if __name__ == '__main__':
     if len(sys.argv)>1:
