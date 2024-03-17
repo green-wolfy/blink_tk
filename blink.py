@@ -10,6 +10,7 @@ import sys
 from tkinter import *
 from tkinter import messagebox
 import threading
+import queue
 
 cred_file = "./cred.json"
 #blink_session = None
@@ -84,7 +85,7 @@ class blink_viewer:
     def __init__(self, master=None, loop=None):
         self.async_loop = loop
         # create a queue for tk to communicate with the asyncio thread
-        self.queue = asyncio.Queue()
+        self.queue = queue.Queue()
         self.worker = threading.Thread(target=self._asyncio_thread, args=(loop,)).start()
         Button(master=master, text='Snapshot', command=self.snapshot).pack()
         Button(master=master, text='View', command=self.view).pack()
@@ -117,7 +118,7 @@ class blink_viewer:
         # start message processing loop
         while True:
             # wait for a message from the tk thread
-            message = await self.queue.get()
+            message = self.queue.get()
             print("Received message: %s" % message)
             if message == 'snapshot':
                 await self.async_snapshot('shot')
