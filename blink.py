@@ -69,6 +69,23 @@ async def pull(blink, camera, render=None):
     #https://rest-u056.immedia-semi.com/api/v3/media/accounts/222219/networks/239481/owl/290887/thumbnail/thumbnail.jpg?ts=1669122404&ext=
     #{base_url}/api/v3/accounts/{account_id}/networks/{network_id}/sync_modules/{sync_id}/local_storage/manifest/{manifest_id}/clip/request/
 
+async def record(blink, camera):
+    # Record a video
+    await camera.record()
+    # Wait for the video to be recorded
+    await asyncio.sleep(10)
+    # Refresh the Blink system to get the new video
+    await blink.refresh(force=True)
+    # Save the video to a file
+    await camera.video_to_file('./video.mp4')
+
+async def get_liveview(blink, camera):
+    # Get a live view
+    liveview = await camera.get_liveview()
+    print(liveview)
+    # Save the live view to a file
+    await camera.image_to_file('./liveview.jpg')
+
 async def blink_main():
     blink = await start()
     for name, camera in blink.cameras.items():
@@ -89,11 +106,16 @@ class blink_viewer:
         # create a queue for tk to communicate with the asyncio thread
         self.queue = queue.Queue()
         self.worker = threading.Thread(target=self._asyncio_thread, args=(loop,)).start()
-        Button(master=master, text='Snapshot', command=self.snapshot).pack()
-        Button(master=master, text='View', command=self.view).pack()
+        pack_opts = {'ipadx': 1, 'ipady': 1, 'anchor': 'w'}
+        toolbar = Frame(master)
+        toolbar.grid(row=0, column=0, sticky='ew')
+        Button(toolbar, text='Snapshot', command=lambda: self.dispatch('snapshot')).pack(side=LEFT, **pack_opts)
+        Button(toolbar, text='View', command=lambda: self.dispatch('view')).pack(side=LEFT, **pack_opts)
+        Button(toolbar, text='Record', command=lambda: self.dispatch('record')).pack(side=LEFT, **pack_opts)
+        Button(toolbar, text='Liveview', command=lambda: self.dispatch('liveview')).pack(side=LEFT, **pack_opts)
         # show image view
         self.canvas = Canvas(master=master, width=640, height=480)
-        self.canvas.pack()
+        self.canvas.grid(row=1, column=0)
         master.bind('<Destroy>', self.stop_worker)
 
     def view_image(self, data):
@@ -122,8 +144,10 @@ class blink_viewer:
             # wait for a message from the tk thread
             message = self.queue.get()
             #print("Received message: %s" % message)
-            if message == 'snapshot': await self.async_snapshot('shot')
-            elif message == 'view':   await self.async_snapshot('view')
+            if   message == 'snapshot': await self.async_snapshot(message)
+            elif message == 'view':     await self.async_snapshot(message)
+            elif message == 'record':   await self.async_video_req(message)
+            elif message == 'liveview': await self.async_video_req(message)
             elif message == 'exit':   break
             #print("Message processed")
 
@@ -133,7 +157,12 @@ class blink_viewer:
             #print(camera.attributes)      # Print available attributes of camera
             #camera = blink.cameras['SOME CAMERA NAME']
             if action=='view': await pull(self.blink, camera, self.view_image)
-            elif action=='shot': await shot(self.blink, camera)
+            elif action=='snapshot': await shot(self.blink, camera)
+
+    async def async_video_req(self, action='record'):
+        for name, camera in self.blink.cameras.items():
+            if action=='record': await record(self.blink, camera)
+            elif action=='liveview': await get_liveview(self.blink, camera)
 
     def _asyncio_thread(self, async_loop):
         try:
@@ -142,14 +171,9 @@ class blink_viewer:
         finally:
             async_loop.close()
 
-    def snapshot(self):
-        #print("Sending snapshot message")
-        if self.blink: self.queue.put_nowait('snapshot')
-        else: messagebox.showinfo("Error", "Blink not connected")
-
-    def view(self):
-        #print("Sending view message")
-        if self.blink: self.queue.put_nowait('view')
+    def dispatch(self, cmd):
+        #print(f"Sending {cmd} ...")
+        if self.blink: self.queue.put_nowait(cmd)
         else: messagebox.showinfo("Error", "Blink not connected")
 
 if __name__ == '__main__':
