@@ -20,3 +20,6 @@ __pycache__
 *.json
 *.jpg
 *.mp4
+*.avi
+*.png
+*.dat

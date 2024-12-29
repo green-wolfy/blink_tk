@@ -14,12 +14,15 @@ import queue
 from PIL import Image, ImageTk
 import io
 
+import cv2
+
 cred_file = "./cred.json"
 #blink_session = None
 
 async def start():
     #global blink_session
     #blink_session = ClientSession()
+    print("Starting Blink")
     if os.path.isfile(cred_file):
         blink = Blink()
         #blink = Blink(session=blink_session) # this will invalid the credential json file as new session was created
@@ -56,7 +59,11 @@ async def pull(blink, camera, render=None):
     if data_jpg:
         #await camera.image_to_file('./image.jpg') # for debugging
         if render!=None: render(data_jpg)
-        else: print("Cached %d bytes as jpg" % len(data_jpg))
+        else:
+            with open(camera.name+'.jpg', 'wb') as f:
+                f.write(data_jpg)
+                f.close()
+            print("Cached %d bytes as jpg" % len(data_jpg))
     else: print("No jpg data")
     if data_vid: print("Cached %d bytes as video" % len(data_vid))
     else: print("No video data")
@@ -77,14 +84,41 @@ async def record(blink, camera):
     # Refresh the Blink system to get the new video
     await blink.refresh(force=True)
     # Save the video to a file
-    await camera.video_to_file('./video.mp4')
+    await camera.video_to_file(camera.name+'.mp4')
 
 async def get_liveview(blink, camera):
     # Get a live view
     liveview = await camera.get_liveview()
     print(liveview)
-    # Save the live view to a file
-    await camera.image_to_file('./liveview.jpg')
+    #await camera.image_to_file('./liveview.jpg')  # Save the live view to a file
+    #await camera.video_to_file('./video.mp4')     # Save the video to a file
+
+    # using openCv to capture stream
+    #cap = cv2.VideoCapture(liveview)
+    cap = cv2.VideoCapture(liveview, cv2.CAP_FFMPEG)
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter('output.avi', fourcc, 20.0, (1280, 720))
+    record_count=1000
+
+    # Check if camera opened successfully
+    if not cap.isOpened():
+        print("Error: Could not open video stream.")
+    else:
+        # Read until video is completed
+        while cap.isOpened():
+            # Capture frame-by-frame
+            ret, frame = cap.read()
+            if ret:
+                # Display the resulting frame
+                cv2.imshow('Video Stream', frame)
+                if record_count>0:
+                    # Write the frame into the file 'output.avi'
+                    out.write(frame)
+                    record_count -= 1
+    out.release()
+    # When everything done, release the video capture object
+    cap.release()
 
 async def blink_main():
     blink = await start()
@@ -105,7 +139,8 @@ class blink_viewer:
         self.async_loop = loop
         # create a queue for tk to communicate with the asyncio thread
         self.queue = queue.Queue()
-        self.worker = threading.Thread(target=self._asyncio_thread, args=(loop,)).start()
+        self.worker = threading.Thread(target=self._asyncio_thread, args=(loop,))
+        self.worker.start()
         pack_opts = {'ipadx': 1, 'ipady': 1, 'anchor': 'w'}
         toolbar = Frame(master)
         toolbar.grid(row=0, column=0, sticky='ew')
@@ -114,7 +149,7 @@ class blink_viewer:
         Button(toolbar, text='Record', command=lambda: self.dispatch('record')).pack(side=LEFT, **pack_opts)
         Button(toolbar, text='Liveview', command=lambda: self.dispatch('liveview')).pack(side=LEFT, **pack_opts)
         # show image view
-        self.canvas = Canvas(master=master, width=640, height=480)
+        self.canvas = Canvas(master=master, width=1280, height=720)
         self.canvas.grid(row=1, column=0)
         master.bind('<Destroy>', self.stop_worker)
 
@@ -138,7 +173,10 @@ class blink_viewer:
             self.async_loop.close()
 
     async def worker_loop(self):
+        print("Worker loop started")
         self.blink = await start()
+        if self.blink==None: print("Failed to start Blink")
+        else: print("Blink started")
         # start message processing loop
         while True:
             # wait for a message from the tk thread
@@ -165,6 +203,7 @@ class blink_viewer:
             elif action=='liveview': await get_liveview(self.blink, camera)
 
     def _asyncio_thread(self, async_loop):
+        print("Starting asyncio thread")
         try:
             async_loop.run_until_complete(self.worker_loop())
             async_loop.stop()
