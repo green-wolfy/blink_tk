@@ -8,6 +8,7 @@ import os
 import sys
 
 from tkinter import *
+from tkinter import ttk
 from tkinter import messagebox
 import threading
 import queue
@@ -148,6 +149,11 @@ class blink_viewer:
         Button(toolbar, text='View', command=lambda: self.dispatch('view')).pack(side=LEFT, **pack_opts)
         Button(toolbar, text='Record', command=lambda: self.dispatch('record')).pack(side=LEFT, **pack_opts)
         Button(toolbar, text='Liveview', command=lambda: self.dispatch('liveview')).pack(side=LEFT, **pack_opts)
+        Button(toolbar, text='Info', command=lambda: self.async_loop.create_task(self.query_cam_info())).pack(side=LEFT, **pack_opts)
+        #Button(toolbar, text='Exit', command=self.stop_worker).pack(side=LEFT, **pack_opts) # No need of this as stop_worker is bound to the window close event
+        self.cam_list = ttk.Combobox(toolbar, values=['Select Camera'], state='readonly')
+        self.cam_list.pack(side=LEFT, **pack_opts)
+        #self.cam_list.bind('<<ComboboxSelected>>', lambda e: self.active_cam.append(self.cam_list.get()))
         # show image view
         self.canvas = Canvas(master=master, width=1280, height=720)
         self.canvas.grid(row=1, column=0)
@@ -162,23 +168,26 @@ class blink_viewer:
         self.canvas.create_image(0, 0, image=img, anchor=NW)
         self.canvas.image = img
 
-    def stop_worker(self, event=None):
-        print("Stopping worker")
-        self.queue.put_nowait('exit')
-        #wait for the worker to finish
+    def stop_worker(self, event=None): # destroy even would be triggered mulitple times from different gadgets
         if self.worker!=None:
+            print("Stopping worker")
+            self.queue.put_nowait('exit')
+            #wait for the worker to finish
             self.worker.join()
-            self.worker = None # avoid calling join again. However, still see this got called about 4 times. Why?
+            self.worker = None # avoid calling join again.
             self.async_loop.stop()  # the async might get stuck, so force stop it
             self.async_loop.close()
+            print("Worker stopped")
 
     async def worker_loop(self):
         print("Worker loop started")
         self.blink = await start()
         if self.blink==None: print("Failed to start Blink")
-        else: print("Blink started")
+        else:
+            print("Blink started")
+            self.cam_list['values'] = list(self.blink.cameras.keys())
         # start message processing loop
-        while True:
+        while self.blink!=None:
             # wait for a message from the tk thread
             message = self.queue.get()
             #print("Received message: %s" % message)
@@ -186,21 +195,29 @@ class blink_viewer:
             elif message == 'view':     await self.async_snapshot(message)
             elif message == 'record':   await self.async_video_req(message)
             elif message == 'liveview': await self.async_video_req(message)
-            elif message == 'exit':   break
+            elif message == 'exit':     break
             #print("Message processed")
 
-    async def async_snapshot(self, action='view'):
+    async def query_cam_info(self):
         for name, camera in self.blink.cameras.items():
-            #print(name)                   # Name of the camera
-            #print(camera.attributes)      # Print available attributes of camera
-            #camera = blink.cameras['SOME CAMERA NAME']
+            print(name)                   # Name of the camera
+            print(camera.attributes)      # Print available attributes of camera
+
+    async def async_snapshot(self, action='view'):
+        cam_name = self.cam_list.get()
+        if cam_name in self.blink.cameras:
+            camera = self.blink.cameras[cam_name]
             if action=='view': await pull(self.blink, camera, self.view_image)
             elif action=='snapshot': await shot(self.blink, camera)
+        else: print("Please select a camera")
 
     async def async_video_req(self, action='record'):
-        for name, camera in self.blink.cameras.items():
+        cam_name = self.cam_list.get()
+        if cam_name in self.blink.cameras:
+            camera = self.blink.cameras[cam_name]
             if action=='record': await record(self.blink, camera)
             elif action=='liveview': await get_liveview(self.blink, camera)
+        else: print("Please select a camera")
 
     def _asyncio_thread(self, async_loop):
         print("Starting asyncio thread")
